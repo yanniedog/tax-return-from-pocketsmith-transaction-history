@@ -161,6 +161,83 @@ const CATEGORY_FALLBACK_RULES = [
   }
 ];
 
+const MERCHANT_STOPWORDS = new Set([
+  "online",
+  "payment",
+  "payments",
+  "receipt",
+  "received",
+  "thankyou",
+  "thank",
+  "date",
+  "card",
+  "debit",
+  "credit",
+  "from",
+  "to",
+  "ref",
+  "help",
+  "time",
+  "eftpos",
+  "purchase",
+  "tap",
+  "transfer",
+  "funds",
+  "internal",
+  "a2a",
+  "osko",
+  "bpay",
+  "bulk",
+  "return",
+  "returned",
+  "bank",
+  "transaction"
+]);
+
+const MERCHANT_LEGAL_SUFFIXES = new Set([
+  "pty",
+  "ltd",
+  "limited",
+  "co",
+  "company",
+  "inc",
+  "llc",
+  "plc",
+  "corp",
+  "corporation",
+  "australia",
+  "australian",
+  "au",
+  "group",
+  "holdings",
+  "trust",
+  "trustee",
+  "unit",
+  "the"
+]);
+
+const MERCHANT_ALIAS_RULES = [
+  { key: "transport for nsw", pattern: /\btransport\s*for\s*nsw\b/ },
+  { key: "officeworks", pattern: /\bofficeworks\b/ },
+  { key: "medrecruit", pattern: /\bmedrecruit\b/ },
+  { key: "nsw health", pattern: /\bnsw\s*health\b|\bnswhealth\b/ },
+  { key: "eyex australia", pattern: /\beyex\b/ },
+  { key: "google", pattern: /\bgoogle\b|\bg\.co\b/ },
+  { key: "paypal", pattern: /\bpaypal\b/ },
+  { key: "tpg internet", pattern: /\btpg\b/ },
+  { key: "ato", pattern: /\bato\b|\btax office\b/ },
+  { key: "american express", pattern: /\bamerican express\b|\bamex\b/ },
+  { key: "uber eats", pattern: /\buber\s*eats\b/ },
+  { key: "uber", pattern: /\buber\b/ },
+  { key: "xero", pattern: /\bxero\b/ },
+  { key: "crypto.com", pattern: /\bcrypto\.?\s*com\b/ },
+  { key: "spaceship", pattern: /\bspaceship\b/ },
+  { key: "raiz", pattern: /\braiz\b/ },
+  { key: "koinly", pattern: /\bkoinly\b/ },
+  { key: "mda", pattern: /\bmda\b/ },
+  { key: "ranzco", pattern: /\branzco\b/ }
+];
+
 const MERCHANT_INCOME_CATEGORIES = new Set([
   "employment_income",
   "health_employer",
@@ -1084,45 +1161,181 @@ function buildMerchantGroups(transactions) {
         lookupKey,
         sampleMerchant: tx.merchant,
         transactionCount: 0,
-        totalAbsAmount: 0
+        totalAbsAmount: 0,
+        merchantNameCounts: new Map()
       });
     }
 
     const group = map.get(lookupKey);
     group.transactionCount += 1;
     group.totalAbsAmount += tx.absAmount;
+    group.merchantNameCounts.set(tx.merchant, (group.merchantNameCounts.get(tx.merchant) || 0) + 1);
 
-    if (group.sampleMerchant.toLowerCase().includes("unknown") && tx.merchant) {
+    if (!group.sampleMerchant || group.sampleMerchant.toLowerCase().includes("unknown")) {
       group.sampleMerchant = tx.merchant;
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => b.totalAbsAmount - a.totalAbsAmount);
+  const groups = Array.from(map.values());
+  for (const group of groups) {
+    let bestName = group.sampleMerchant;
+    let bestCount = 0;
+    for (const [name, count] of group.merchantNameCounts.entries()) {
+      if (count > bestCount) {
+        bestCount = count;
+        bestName = name;
+      }
+    }
+    group.sampleMerchant = bestName;
+    delete group.merchantNameCounts;
+  }
+
+  return groups.sort((a, b) => b.totalAbsAmount - a.totalAbsAmount);
 }
 
 function deriveMerchantLookupKey(rawMerchant) {
-  const raw = normalizeText(rawMerchant || "");
-  if (!raw) {
+  const normalized = normalizeText(rawMerchant || "");
+  if (!normalized) {
     return "";
   }
 
-  let cleaned = raw;
-
-  cleaned = cleaned.replace(/^paypal\s+/, "");
-  cleaned = cleaned.replace(/^google\s+\*?\s*/, "google ");
+  let cleaned = normalized;
   cleaned = cleaned.replace(/^transportfornsw/, "transport for nsw");
-  cleaned = cleaned.replace(/\b(online|payment|receipt|received|thankyou|thank|date|card|debit|credit|from|to|ref|help|co)\b/g, " ");
-  cleaned = cleaned.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/g, " ");
-  cleaned = cleaned.replace(/\b[a-z]*\d+[a-z0-9]*\b/g, " ");
-  cleaned = cleaned.replace(/\b(x{2,}\d*|\d{3,})\b/g, " ");
+  cleaned = cleaned.replace(/^paypal\s+\*?\s*/, "");
+  cleaned = cleaned.replace(/^google\s+\*?\s*/, "google ");
+  cleaned = cleaned.replace(/\\n/g, " ");
   cleaned = cleaned.replace(/\s+/g, " ").trim();
 
-  if (!cleaned) {
-    return raw.slice(0, 80);
+  for (const alias of MERCHANT_ALIAS_RULES) {
+    if (alias.pattern.test(cleaned)) {
+      return alias.key;
+    }
   }
 
-  const tokens = cleaned.split(" ").filter((token) => token.length > 1);
-  return tokens.slice(0, 6).join(" ");
+  if (isLikelyInternalTransferMerchant(cleaned)) {
+    return "internal transfer";
+  }
+
+  let tokens = cleaned
+    .split(" ")
+    .map((token) => normalizeMerchantToken(token))
+    .filter(Boolean)
+    .filter((token) => !isMerchantNoiseToken(token));
+
+  if (!tokens.length) {
+    return normalized.slice(0, 80);
+  }
+
+  tokens = dedupeTokens(tokens);
+
+  if (tokens.includes("eyex")) {
+    return "eyex australia";
+  }
+  if (tokens.includes("officeworks")) {
+    return "officeworks";
+  }
+  if (tokens.includes("medrecruit")) {
+    return "medrecruit";
+  }
+  if (tokens.includes("google")) {
+    return "google";
+  }
+  if (tokens.includes("transport") && tokens.includes("nsw")) {
+    return "transport for nsw";
+  }
+  if (tokens.includes("nsw") && tokens.includes("health")) {
+    return "nsw health";
+  }
+  if (tokens.includes("tpg")) {
+    return "tpg internet";
+  }
+
+  const strongTokens = tokens.filter((token) => !MERCHANT_LEGAL_SUFFIXES.has(token));
+  const chosen = strongTokens.length ? strongTokens : tokens;
+  if (!chosen.length) {
+    return normalized.slice(0, 80);
+  }
+
+  if (chosen.length === 1) {
+    return chosen[0];
+  }
+
+  return chosen.slice(0, 2).join(" ");
+}
+
+function normalizeMerchantToken(token) {
+  let value = String(token || "").trim().toLowerCase();
+  if (!value) {
+    return "";
+  }
+
+  if (value === "austral") {
+    return "australia";
+  }
+  if (value === "nswhealth") {
+    return "nsw health";
+  }
+  if (value === "transportfornsw") {
+    return "transport for nsw";
+  }
+
+  return value;
+}
+
+function isMerchantNoiseToken(token) {
+  const value = String(token || "").trim();
+  if (!value) {
+    return true;
+  }
+  if (MERCHANT_STOPWORDS.has(value)) {
+    return true;
+  }
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/.test(value)) {
+    return true;
+  }
+  if (/^[a-z]*\d+[a-z0-9]*$/.test(value)) {
+    return true;
+  }
+  if (/^x{2,}\d*$/i.test(value)) {
+    return true;
+  }
+  if (/^\d+$/.test(value)) {
+    return true;
+  }
+  if (value.length <= 1) {
+    return true;
+  }
+  return false;
+}
+
+function dedupeTokens(tokens) {
+  const out = [];
+  const seen = new Set();
+  for (const token of tokens) {
+    if (!token || seen.has(token)) {
+      continue;
+    }
+    seen.add(token);
+    out.push(token);
+  }
+  return out;
+}
+
+function isLikelyInternalTransferMerchant(text) {
+  const value = normalizeText(text || "");
+  if (!value) {
+    return false;
+  }
+
+  const hasTransferSignal = /\b(a2a|transfer|osko|round up|internal|savings maximiser|orange everyday|offset)\b/.test(value);
+  if (!hasTransferSignal) {
+    return false;
+  }
+
+  const hasKnownExternalMerchant = /\b(officeworks|medrecruit|google|tpg|transport for nsw|uber|paypal|xero|ato|eyex|nsw health|spaceship|raiz|koinly|mda|ranzco|woolworths|coles|aldi)\b/.test(
+    value
+  );
+  return !hasKnownExternalMerchant;
 }
 
 function populateFyOptions(transactions) {

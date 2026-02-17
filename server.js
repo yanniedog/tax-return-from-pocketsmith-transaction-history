@@ -106,6 +106,83 @@ const CATEGORY_RULES = [
   }
 ];
 
+const MERCHANT_STOPWORDS = new Set([
+  "online",
+  "payment",
+  "payments",
+  "receipt",
+  "received",
+  "thankyou",
+  "thank",
+  "date",
+  "card",
+  "debit",
+  "credit",
+  "from",
+  "to",
+  "ref",
+  "help",
+  "time",
+  "eftpos",
+  "purchase",
+  "tap",
+  "transfer",
+  "funds",
+  "internal",
+  "a2a",
+  "osko",
+  "bpay",
+  "bulk",
+  "return",
+  "returned",
+  "bank",
+  "transaction"
+]);
+
+const MERCHANT_LEGAL_SUFFIXES = new Set([
+  "pty",
+  "ltd",
+  "limited",
+  "co",
+  "company",
+  "inc",
+  "llc",
+  "plc",
+  "corp",
+  "corporation",
+  "australia",
+  "australian",
+  "au",
+  "group",
+  "holdings",
+  "trust",
+  "trustee",
+  "unit",
+  "the"
+]);
+
+const MERCHANT_ALIAS_RULES = [
+  { key: "transport for nsw", pattern: /\btransport\s*for\s*nsw\b/ },
+  { key: "officeworks", pattern: /\bofficeworks\b/ },
+  { key: "medrecruit", pattern: /\bmedrecruit\b/ },
+  { key: "nsw health", pattern: /\bnsw\s*health\b|\bnswhealth\b/ },
+  { key: "eyex australia", pattern: /\beyex\b/ },
+  { key: "google", pattern: /\bgoogle\b|\bg\.co\b/ },
+  { key: "paypal", pattern: /\bpaypal\b/ },
+  { key: "tpg internet", pattern: /\btpg\b/ },
+  { key: "ato", pattern: /\bato\b|\btax office\b/ },
+  { key: "american express", pattern: /\bamerican express\b|\bamex\b/ },
+  { key: "uber eats", pattern: /\buber\s*eats\b/ },
+  { key: "uber", pattern: /\buber\b/ },
+  { key: "xero", pattern: /\bxero\b/ },
+  { key: "crypto.com", pattern: /\bcrypto\.?\s*com\b/ },
+  { key: "spaceship", pattern: /\bspaceship\b/ },
+  { key: "raiz", pattern: /\braiz\b/ },
+  { key: "koinly", pattern: /\bkoinly\b/ },
+  { key: "mda", pattern: /\bmda\b/ },
+  { key: "ranzco", pattern: /\branzco\b/ }
+];
+
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static(__dirname, { extensions: ["html"] }));
@@ -557,27 +634,152 @@ function buildAbrQueries(name) {
 }
 
 function deriveLookupName(merchantRaw) {
-  const raw = normalizeText(merchantRaw || "");
-  if (!raw) {
+  const normalized = normalizeText(merchantRaw || "");
+  if (!normalized) {
     return "";
   }
 
-  let name = raw;
-  name = name.replace(/^paypal\s+/, "");
-  name = name.replace(/^google\s+\*?\s*/, "google ");
-  name = name.replace(/^transportfornsw/, "transport for nsw");
-  name = name.replace(/\b(online|payment|received|thankyou|receipt|debit|credit|card|date|from|to|ref)\b/g, " ");
-  name = name.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/g, " ");
-  name = name.replace(/\b[a-z]*\d+[a-z0-9]*\b/g, " ");
-  name = name.replace(/\b(x{2,}\d*|\d{3,})\b/g, " ");
-  name = name.replace(/\s+/g, " ").trim();
+  let cleaned = normalized;
+  cleaned = cleaned.replace(/^transportfornsw/, "transport for nsw");
+  cleaned = cleaned.replace(/^paypal\s+\*?\s*/, "");
+  cleaned = cleaned.replace(/^google\s+\*?\s*/, "google ");
+  cleaned = cleaned.replace(/\\n/g, " ");
+  cleaned = cleaned.replace(/\s+/g, " ").trim();
 
-  const tokens = name.split(" ").filter((token) => token.length > 1);
-  return tokens.slice(0, 7).join(" ");
+  for (const alias of MERCHANT_ALIAS_RULES) {
+    if (alias.pattern.test(cleaned)) {
+      return alias.key;
+    }
+  }
+
+  if (isLikelyInternalTransferMerchant(cleaned)) {
+    return "internal transfer";
+  }
+
+  let tokens = cleaned
+    .split(" ")
+    .map((token) => normalizeMerchantToken(token))
+    .filter(Boolean)
+    .filter((token) => !isMerchantNoiseToken(token));
+
+  if (!tokens.length) {
+    return normalized.slice(0, 80);
+  }
+
+  tokens = dedupeTokens(tokens);
+  const strongTokens = tokens.filter((token) => !MERCHANT_LEGAL_SUFFIXES.has(token));
+  const chosen = strongTokens.length ? strongTokens : tokens;
+  return chosen.slice(0, 4).join(" ");
 }
 
 function deriveMerchantLookupKey(merchantRaw) {
-  return deriveLookupName(merchantRaw).slice(0, 120);
+  const lookupName = deriveLookupName(merchantRaw);
+  if (!lookupName) {
+    return "";
+  }
+
+  const normalized = normalizeText(lookupName);
+  for (const alias of MERCHANT_ALIAS_RULES) {
+    if (alias.pattern.test(normalized)) {
+      return alias.key;
+    }
+  }
+
+  const tokens = normalized.split(" ").filter((token) => token.length > 1);
+  if (!tokens.length) {
+    return normalized.slice(0, 120);
+  }
+
+  if (tokens.includes("transport") && tokens.includes("nsw")) {
+    return "transport for nsw";
+  }
+  if (tokens.includes("eyex")) {
+    return "eyex australia";
+  }
+  if (tokens.includes("google")) {
+    return "google";
+  }
+  if (tokens.includes("officeworks")) {
+    return "officeworks";
+  }
+
+  const strongTokens = tokens.filter((token) => !MERCHANT_LEGAL_SUFFIXES.has(token));
+  const chosen = strongTokens.length ? strongTokens : tokens;
+  return chosen.slice(0, 2).join(" ").slice(0, 120);
+}
+
+function normalizeMerchantToken(token) {
+  let value = String(token || "").trim().toLowerCase();
+  if (!value) {
+    return "";
+  }
+
+  if (value === "austral") {
+    return "australia";
+  }
+  if (value === "nswhealth") {
+    return "nsw health";
+  }
+  if (value === "transportfornsw") {
+    return "transport for nsw";
+  }
+  return value;
+}
+
+function isMerchantNoiseToken(token) {
+  const value = String(token || "").trim();
+  if (!value) {
+    return true;
+  }
+  if (MERCHANT_STOPWORDS.has(value)) {
+    return true;
+  }
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/.test(value)) {
+    return true;
+  }
+  if (/^[a-z]*\d+[a-z0-9]*$/.test(value)) {
+    return true;
+  }
+  if (/^x{2,}\d*$/i.test(value)) {
+    return true;
+  }
+  if (/^\d+$/.test(value)) {
+    return true;
+  }
+  if (value.length <= 1) {
+    return true;
+  }
+  return false;
+}
+
+function dedupeTokens(tokens) {
+  const out = [];
+  const seen = new Set();
+  for (const token of tokens) {
+    if (!token || seen.has(token)) {
+      continue;
+    }
+    seen.add(token);
+    out.push(token);
+  }
+  return out;
+}
+
+function isLikelyInternalTransferMerchant(text) {
+  const value = normalizeText(text || "");
+  if (!value) {
+    return false;
+  }
+
+  const hasTransferSignal = /\b(a2a|transfer|osko|round up|internal|savings maximiser|orange everyday|offset)\b/.test(value);
+  if (!hasTransferSignal) {
+    return false;
+  }
+
+  const hasKnownExternalMerchant = /\b(officeworks|medrecruit|google|tpg|transport for nsw|uber|paypal|xero|ato|eyex|nsw health|spaceship|raiz|koinly|mda|ranzco|woolworths|coles|aldi)\b/.test(
+    value
+  );
+  return !hasKnownExternalMerchant;
 }
 
 function normalizeText(value) {
