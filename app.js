@@ -1112,6 +1112,8 @@ function deriveMerchantLookupKey(rawMerchant) {
   cleaned = cleaned.replace(/^google\s+\*?\s*/, "google ");
   cleaned = cleaned.replace(/^transportfornsw/, "transport for nsw");
   cleaned = cleaned.replace(/\b(online|payment|receipt|received|thankyou|thank|date|card|debit|credit|from|to|ref|help|co)\b/g, " ");
+  cleaned = cleaned.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/g, " ");
+  cleaned = cleaned.replace(/\b[a-z]*\d+[a-z0-9]*\b/g, " ");
   cleaned = cleaned.replace(/\b(x{2,}\d*|\d{3,})\b/g, " ");
   cleaned = cleaned.replace(/\s+/g, " ").trim();
 

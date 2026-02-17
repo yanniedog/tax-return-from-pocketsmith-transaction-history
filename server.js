@@ -15,6 +15,11 @@ const LOOKUP_HEADERS = {
 
 const CATEGORY_RULES = [
   {
+    category: "employment_income",
+    businessType: "Employer payroll source",
+    keywords: ["salary", "payroll", "wage", "wages", "eyex", "dhhs"]
+  },
+  {
     category: "health_employer",
     businessType: "Health service / hospital employer",
     keywords: ["nsw health", "health service", "hospital", "local health district", "st vincent", "healthscope"]
@@ -287,16 +292,19 @@ async function lookupAbrByName(name, merchantHint) {
   }
 
   const cleanedName = normalizeText(name);
-  const hintToken = normalizeText(merchantHint || "").split(" ").find(Boolean) || "";
+  const normalizedHint = normalizeText(merchantHint || "");
+  const hintToken = normalizedHint.split(" ").find(Boolean) || "";
   const ranked = rows
     .map((row) => {
-      const similarity = tokenSimilarity(cleanedName, normalizeText(row.name));
-      const includes = normalizeText(row.name).includes(cleanedName) ? 1 : 0;
-      const hintBoost = hintToken && normalizeText(row.name).includes(hintToken) ? 1 : 0;
+      const normalizedRowName = normalizeText(row.name);
+      const similarity = tokenSimilarity(cleanedName, normalizedRowName);
+      const hintSimilarity = tokenSimilarity(normalizedHint, normalizedRowName);
+      const includes = normalizedRowName.includes(cleanedName) ? 1 : 0;
+      const hintBoost = hintToken && normalizedRowName.includes(hintToken) ? 1 : 0;
       const nameTypeBoost = row.nameType === "Entity Name" ? 1 : 0;
       return {
         ...row,
-        rank: row.relevance + similarity * 35 + includes * 10 + hintBoost * 18 + nameTypeBoost * 5
+        rank: row.relevance + similarity * 25 + hintSimilarity * 45 + includes * 10 + hintBoost * 8 + nameTypeBoost * 5
       };
     })
     .sort((a, b) => b.rank - a.rank);
@@ -325,14 +333,17 @@ function parseAbrCompressedRow(raw) {
     return null;
   }
 
+  const tail = parts.slice(-8);
+  const nameParts = parts.slice(5, parts.length - 8);
+
   const abn = parts[0].replace(/\s+/g, "").trim();
   const status = collapseWhitespace(parts[3]);
-  const name = collapseWhitespace(parts[5]);
-  const nameType = collapseWhitespace(parts[8]);
-  const location = collapseWhitespace(parts[10]);
-  const state = collapseWhitespace(parts[11]);
-  const postcode = collapseWhitespace(parts[12]);
-  const relevance = Number(collapseWhitespace(parts[13])) || 0;
+  const name = collapseWhitespace(nameParts.join(","));
+  const nameType = collapseWhitespace(tail[2]);
+  const location = collapseWhitespace(tail[4]);
+  const state = collapseWhitespace(tail[5]);
+  const postcode = collapseWhitespace(tail[6]);
+  const relevance = Number(collapseWhitespace(tail[7])) || 0;
 
   if (!abn || !name) {
     return null;
@@ -425,6 +436,7 @@ function unwrapDuckDuckGoUrl(rawUrl) {
 }
 
 function classifyBusinessCategory({ merchantRaw, merchantLookupName, abrResult, abrDetails, search }) {
+  const merchantText = normalizeText(`${merchantRaw || ""} ${merchantLookupName || ""}`);
   const text = normalizeText(
     [
       merchantRaw,
@@ -453,6 +465,9 @@ function classifyBusinessCategory({ merchantRaw, merchantLookupName, abrResult, 
     let score = 0;
     for (const keyword of rule.keywords) {
       if (text.includes(keyword)) {
+        score += keyword.includes(" ") ? 2 : 1;
+      }
+      if (merchantText.includes(keyword)) {
         score += keyword.includes(" ") ? 2 : 1;
       }
     }
@@ -552,6 +567,8 @@ function deriveLookupName(merchantRaw) {
   name = name.replace(/^google\s+\*?\s*/, "google ");
   name = name.replace(/^transportfornsw/, "transport for nsw");
   name = name.replace(/\b(online|payment|received|thankyou|receipt|debit|credit|card|date|from|to|ref)\b/g, " ");
+  name = name.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/g, " ");
+  name = name.replace(/\b[a-z]*\d+[a-z0-9]*\b/g, " ");
   name = name.replace(/\b(x{2,}\d*|\d{3,})\b/g, " ");
   name = name.replace(/\s+/g, " ").trim();
 
