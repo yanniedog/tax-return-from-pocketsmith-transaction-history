@@ -1,0 +1,171 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PocketSmith Tax Return Prep (AU Employee)</title>
+  <meta name="description" content="Upload PocketSmith CSV transactions and generate an accountant-ready Australian employee tax return submission pack.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"></div>
+  <header class="hero">
+    <p class="eyebrow">Australia · Employee Tax Workflow</p>
+    <h1>PocketSmith to Accountant Submission</h1>
+    <p class="hero-copy">
+      Upload your PocketSmith CSV, choose a financial year, and generate a structured tax submission pack with
+      assessable income, likely deductions, excluded transfers, and accountant review notes.
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="panel intake">
+      <h2>1) Data Intake</h2>
+      <div class="field-grid">
+        <label class="field file-field">
+          <span>PocketSmith CSV</span>
+          <input id="csvFile" type="file" accept=".csv,text/csv">
+          <small id="fileStatus">No file loaded</small>
+        </label>
+
+        <label class="field">
+          <span>Financial Year</span>
+          <select id="fySelect" disabled>
+            <option>Load a CSV first</option>
+          </select>
+          <small>Defaults to the most recently ended Australian FY.</small>
+        </label>
+
+        <label class="field">
+          <span>Occupation (optional)</span>
+          <input id="occupation" type="text" placeholder="e.g. Medical practitioner">
+        </label>
+
+        <label class="field">
+          <span>Known Employer Names (optional)</span>
+          <input id="employers" type="text" placeholder="Comma-separated, e.g. NSW Health, MedRecruit">
+        </label>
+
+        <label class="toggle">
+          <input id="includePossible" type="checkbox" checked>
+          <span>Include possible deductions in submission totals</span>
+        </label>
+
+        <label class="toggle">
+          <input id="strictTransfers" type="checkbox" checked>
+          <span>Strict transfer detection (exclude mirrored internal transfers)</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="analyzeBtn" type="button" disabled>Analyze and Build Submission</button>
+      </div>
+      <p id="analysisStatus" class="status">Waiting for CSV file.</p>
+    </section>
+
+    <section id="summaryPanel" class="panel hidden">
+      <h2>2) FY Analysis Summary</h2>
+      <div id="summaryCards" class="cards"></div>
+      <p id="summaryMeta" class="meta"></p>
+    </section>
+
+    <section id="incomePanel" class="panel hidden">
+      <h2>3) Assessable Income Schedule</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Income Category</th>
+              <th>Transactions</th>
+              <th>Amount (AUD)</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="incomeTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="deductionPanel" class="panel hidden">
+      <h2>4) Deduction Schedule</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ATO Label</th>
+              <th>Deduction Category</th>
+              <th>Transactions</th>
+              <th>Amount (AUD)</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody id="deductionTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="reviewPanel" class="panel hidden">
+      <h2>5) Items Requiring Accountant Review</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Merchant</th>
+              <th>Amount (AUD)</th>
+              <th>Suggested Treatment</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="reviewTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="merchantPanel" class="panel hidden">
+      <h2>6) Merchant Intelligence (Web-Enriched)</h2>
+      <p class="meta">
+        Uses live web search + ABR/ABN lookup to classify merchants, identify ABN where possible, and capture main place of business.
+      </p>
+      <div class="actions">
+        <button id="enrichMerchantsBtn" type="button" disabled>Enrich Merchants (Web Search + ABN)</button>
+        <button id="downloadMerchantsBtn" type="button" disabled>Download Merchant Intelligence CSV</button>
+      </div>
+      <p id="merchantStatus" class="status">Merchant enrichment has not been run.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Merchant</th>
+              <th>Transactions</th>
+              <th>Amount (AUD)</th>
+              <th>Business Type</th>
+              <th>ABN</th>
+              <th>Main Place of Business</th>
+              <th>Confidence</th>
+              <th>Sources</th>
+            </tr>
+          </thead>
+          <tbody id="merchantTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="submissionPanel" class="panel hidden">
+      <h2>7) Accountant Submission Pack</h2>
+      <div class="actions">
+        <button id="copySubmissionBtn" type="button">Copy Markdown</button>
+        <button id="downloadSubmissionBtn" type="button">Download Markdown</button>
+        <button id="downloadClassifiedBtn" type="button">Download Classified CSV</button>
+      </div>
+      <textarea id="submissionText" spellcheck="false" readonly></textarea>
+      <p class="meta">Automated draft for accountant review. Keep receipts/logbooks and verify private vs work apportionment before lodging.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
