@@ -2,11 +2,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { exec } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = Number(process.env.PORT || 3000);
+const SHOULD_OPEN_BROWSER = process.argv.includes("--open");
 const CACHE_PATH = path.join(__dirname, "merchant-intel-cache.json");
 const LOOKUP_HEADERS = {
   "user-agent": "Mozilla/5.0 (compatible; PocketSmithTaxPrep/1.0; +https://localhost)",
@@ -236,7 +238,11 @@ app.post("/api/enrich-merchants", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`PocketSmith tax prep app running at http://localhost:${PORT}`);
+  const url = `http://localhost:${PORT}`;
+  console.log(`PocketSmith tax prep app running at ${url}`);
+  if (SHOULD_OPEN_BROWSER) {
+    openBrowser(url);
+  }
 });
 
 function dedupeMerchants(merchants) {
@@ -908,6 +914,25 @@ async function runWithConcurrency(items, concurrency, worker) {
 
   await Promise.all(runners);
   return output;
+}
+
+function openBrowser(url) {
+  const safeUrl = String(url || "").replace(/"/g, "");
+  let command = "";
+
+  if (process.platform === "win32") {
+    command = `start "" "${safeUrl}"`;
+  } else if (process.platform === "darwin") {
+    command = `open "${safeUrl}"`;
+  } else {
+    command = `xdg-open "${safeUrl}"`;
+  }
+
+  exec(command, (error) => {
+    if (error) {
+      console.warn("Could not open browser automatically:", error.message);
+    }
+  });
 }
 
 async function loadCache() {

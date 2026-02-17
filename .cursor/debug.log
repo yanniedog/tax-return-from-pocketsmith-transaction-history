@@ -1,0 +1,4 @@
+{"location": "launch.py", "message": "main entry", "timestamp": 1771345716719, "data": {}, "hypothesisId": "D"}
+{"location": "launch.py", "message": "ensure_node_tooling entry", "timestamp": 1771345716735, "data": {"node": true, "npm": true}, "hypothesisId": "A"}
+{"location": "launch.py", "message": "start_app before Popen", "timestamp": 1771345716752, "data": {"cwd": "C:\\code\\tax-return-from-pocketsmith", "command": ["C:\\Program Files\\nodejs\\npm.CMD", "start"]}, "hypothesisId": "C"}
+{"location": "launch.py", "message": "start_app Popen ok, waiting", "timestamp": 1771345716757, "data": {"pid": 66784}, "hypothesisId": "C"}

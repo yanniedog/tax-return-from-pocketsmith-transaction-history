@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node server.js --open",
+    "start:server": "node server.js",
+    "dev": "node --watch server.js --open"
   },
   "dependencies": {
     "express": "^4.21.2"

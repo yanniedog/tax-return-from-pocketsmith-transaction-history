@@ -33,6 +33,13 @@ The site can enrich **every merchant in the selected FY** by calling backend API
 
 ## Run
 
+### One-click (Windows)
+
+- Double-click `Launch.bat` (or run `.\Launch.ps1` in PowerShell).
+- This starts the local app service and opens `http://localhost:3000` automatically.
+
+### CLI
+
 1. Install dependencies:
 
 ```bash
@@ -45,11 +52,13 @@ npm install
 npm start
 ```
 
-3. Open:
+3. Open (if not auto-opened):
 
 ```text
 http://localhost:3000
 ```
+
+Do not open `index.html` directly via `file://` if you want live merchant web enrichment, because browser CORS rules block direct ABR/web requests without the local app service.
 
 ## Files
 

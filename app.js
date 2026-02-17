@@ -306,6 +306,7 @@ const state = {
 };
 
 bindEvents();
+applyRuntimeModeHints();
 
 function bindEvents() {
   elements.csvFile.addEventListener("change", onFileSelected);
@@ -315,6 +316,16 @@ function bindEvents() {
   elements.copySubmissionBtn.addEventListener("click", copySubmission);
   elements.downloadSubmissionBtn.addEventListener("click", downloadSubmission);
   elements.downloadClassifiedBtn.addEventListener("click", downloadClassifiedCsv);
+}
+
+function applyRuntimeModeHints() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (window.location.protocol === "file:") {
+    setStatus("Loaded from local file. Web merchant enrichment requires app mode. Start with Launch.bat or open http://localhost:3000.", true);
+    setMerchantStatus("Web enrichment unavailable in file mode. Use Launch.bat / npm start to run app mode.", true);
+  }
 }
 
 async function onFileSelected(event) {
@@ -1836,6 +1847,11 @@ function setMerchantStatus(message, isError = false) {
 }
 
 async function enrichMerchantsForCurrentFy() {
+  if (isFileMode()) {
+    setMerchantStatus("Web enrichment requires app mode. Run Launch.bat (or npm start) and open http://localhost:3000.", true);
+    return;
+  }
+
   if (!state.currentFyTransactions.length || !state.selectedFy) {
     setMerchantStatus("Run analysis for an FY before merchant enrichment.", true);
     return;
@@ -1904,7 +1920,7 @@ async function enrichMerchantsForCurrentFy() {
     setMerchantStatus(`Merchant enrichment complete. ${state.merchantIntelByLookup.size.toLocaleString()} merchants now classified.`);
   } catch (error) {
     setMerchantStatus(
-      `${error.message || "Merchant enrichment failed."} Ensure the app is running via \`npm start\` so /api/enrich-merchants is available.`,
+      `${error.message || "Merchant enrichment failed."} Start the app with Launch.bat (or \`npm start\`) and use http://localhost:3000.`,
       true
     );
   } finally {
@@ -2164,6 +2180,13 @@ function clearResults() {
   elements.downloadMerchantsBtn.disabled = true;
   setMerchantStatus("Merchant enrichment has not been run.");
   elements.submissionText.value = "";
+}
+
+function isFileMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.location && window.location.protocol === "file:";
 }
 
 function setStatus(message, isError = false) {
