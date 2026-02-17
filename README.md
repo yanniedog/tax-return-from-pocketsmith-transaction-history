@@ -16,6 +16,8 @@ A web app that ingests PocketSmith CSV exports and prepares an accountant-ready 
 
 The site can enrich **every merchant in the selected FY** by calling backend APIs that:
 
+- Canonicalize noisy bank statement merchant strings into stable merchant keys (strip IDs, receipt noise, transfer artifacts).
+- Group transaction variants under the same merchant entity before enrichment/classification.
 - Search ABR/ABN records by merchant/business name.
 - Attempt ABN match extraction for each merchant.
 - Pull ABN details (entity type, main place of business where available).

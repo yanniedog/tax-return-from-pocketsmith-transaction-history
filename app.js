@@ -667,6 +667,15 @@ function classifyFromMerchantIntel(tx, intel) {
   const reasonPrefix = intelContext ? `Merchant intelligence (${intelContext}). ` : "Merchant intelligence applied. ";
 
   if (tx.amount > 0) {
+    if (category === "banking_event") {
+      return {
+        treatment: "internal_transfer",
+        taxCategory: "Internal transfer / banking event",
+        confidence: bumpConfidence(confidence, "medium"),
+        reason: `${reasonPrefix}Credit treated as non-assessable banking movement.`
+      };
+    }
+
     if (MERCHANT_INCOME_CATEGORIES.has(category)) {
       return {
         treatment: "income_assessable",
@@ -686,6 +695,15 @@ function classifyFromMerchantIntel(tx, intel) {
     }
 
     return null;
+  }
+
+  if (category === "banking_event") {
+    return {
+      treatment: "internal_transfer",
+      taxCategory: "Internal transfer / banking event",
+      confidence: bumpConfidence(confidence, "medium"),
+      reason: `${reasonPrefix}Debit treated as non-deductible banking movement.`
+    };
   }
 
   if (category === "tax_accounting") {
@@ -1338,6 +1356,27 @@ function isLikelyInternalTransferMerchant(text) {
   return !hasKnownExternalMerchant;
 }
 
+function isSyntheticMerchantLookupKey(key) {
+  const value = normalizeText(key || "");
+  if (!value) {
+    return false;
+  }
+
+  if (value === "internal transfer") {
+    return true;
+  }
+  if (/\bloan drawdown\b/.test(value)) {
+    return true;
+  }
+  if (/\bloan repayment\b/.test(value)) {
+    return true;
+  }
+  if (value === "withdrawal") {
+    return true;
+  }
+  return false;
+}
+
 function populateFyOptions(transactions) {
   const fyValues = Array.from(new Set(transactions.map((tx) => tx.fyEndYear))).sort((a, b) => a - b);
   elements.fySelect.innerHTML = "";
@@ -1802,10 +1841,38 @@ async function enrichMerchantsForCurrentFy() {
     return;
   }
 
-  const pending = state.merchantGroups.filter((group) => !state.merchantIntelByLookup.has(group.lookupKey));
+  for (const group of state.merchantGroups) {
+    if (state.merchantIntelByLookup.has(group.lookupKey)) {
+      continue;
+    }
+    if (isSyntheticMerchantLookupKey(group.lookupKey)) {
+      state.merchantIntelByLookup.set(group.lookupKey, {
+        lookupKey: group.lookupKey,
+        merchantRaw: group.sampleMerchant,
+        merchantLookupName: group.lookupKey,
+        businessType: "Internal transfer / banking event",
+        businessCategory: "banking_event",
+        classificationConfidence: "high",
+        classificationReason: "Derived from canonical merchant key; no external merchant lookup required.",
+        abn: "",
+        abnName: "",
+        abnEntityType: "",
+        abnStatus: "",
+        mainPlaceOfBusiness: "",
+        sourceUrls: [],
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  const pending = state.merchantGroups.filter(
+    (group) => !state.merchantIntelByLookup.has(group.lookupKey) && !isSyntheticMerchantLookupKey(group.lookupKey)
+  );
   if (!pending.length) {
     setMerchantStatus("All merchants in this FY are already enriched.");
     elements.downloadMerchantsBtn.disabled = false;
+    rebuildAnalysisFromState();
+    renderMerchantRows(state.merchantGroups, state.merchantIntelByLookup);
     return;
   }
 

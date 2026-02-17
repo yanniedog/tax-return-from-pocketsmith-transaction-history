@@ -269,6 +269,28 @@ async function enrichMerchant(merchant, forceRefresh) {
     throw new Error("No merchant lookup key available.");
   }
 
+  if (isSyntheticMerchantLookupKey(lookupKey)) {
+    const synthetic = {
+      lookupKey,
+      merchantRaw,
+      merchantLookupName: lookupKey,
+      businessType: "Internal transfer / banking event",
+      businessCategory: "banking_event",
+      classificationConfidence: "high",
+      classificationReason: "Canonical key indicates non-merchant banking movement; ABR lookup skipped.",
+      abn: "",
+      abnName: "",
+      abnEntityType: "",
+      abnStatus: "",
+      mainPlaceOfBusiness: "",
+      sourceUrls: [],
+      updatedAt: new Date().toISOString()
+    };
+    merchantCache[lookupKey] = synthetic;
+    scheduleCacheSave();
+    return synthetic;
+  }
+
   if (!forceRefresh && merchantCache[lookupKey]) {
     return merchantCache[lookupKey];
   }
@@ -780,6 +802,26 @@ function isLikelyInternalTransferMerchant(text) {
     value
   );
   return !hasKnownExternalMerchant;
+}
+
+function isSyntheticMerchantLookupKey(key) {
+  const value = normalizeText(key || "");
+  if (!value) {
+    return false;
+  }
+  if (value === "internal transfer") {
+    return true;
+  }
+  if (/\bloan drawdown\b/.test(value)) {
+    return true;
+  }
+  if (/\bloan repayment\b/.test(value)) {
+    return true;
+  }
+  if (value === "withdrawal") {
+    return true;
+  }
+  return false;
 }
 
 function normalizeText(value) {
